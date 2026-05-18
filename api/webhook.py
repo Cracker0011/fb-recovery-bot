@@ -417,7 +417,7 @@ def do_authselection(session, s):
         if match_audio:
             captcha_url = match_audio.group(0).rstrip('\\')
 
-    return captcha_url, resp_text
+    return captcha_url, clean_text
 
 
 def do_smscaptcha(s):
@@ -641,7 +641,7 @@ def handle_message(message):
                 if captcha_url:
                     is_audio = 'tfbaudio' in captcha_url
                     try:
-                        img_resp = requests.get(captcha_url, timeout=15)
+                        img_resp = shared_session.get(captcha_url, timeout=15)
                         if img_resp.status_code == 200:
                             if is_audio:
                                 bot.send_audio(
@@ -665,13 +665,13 @@ def handle_message(message):
                         bot.send_message(chat_id, f"⚠️ Error ambil captcha: {e}\nURL: `{captcha_url}`\n\nKetik kode captcha:", parse_mode="Markdown")
                         save_user_data(chat_id, {"state": STATE_WAITING_CAPTCHA, "session": s})
                 else:
+                    snippet = raw_resp[:2000] if raw_resp else "(kosong)"
                     bot.send_message(
                         chat_id,
-                        "⚠️ URL captcha tidak ditemukan di response.\n\n"
-                        "Kemungkinan:\n"
-                        "• Nomor tidak terdaftar di Facebook\n"
-                        "• Facebook tidak meminta captcha untuk nomor ini\n\n"
-                        "Coba kirim ulang: `+nomorhp|uid`",
+                        "⚠️ *Captcha tidak ditemukan.*\n\n"
+                        f"*contextdata:* `{s.get('contextdata', '(kosong)')}`\n"
+                        f"*persistdata:* `{s.get('persistdata', '(kosong)')}`\n\n"
+                        f"*Potongan response authselection:*\n```\n{snippet}\n```",
                         parse_mode="Markdown"
                     )
                     save_user_data(chat_id, {"state": STATE_IDLE, "session": None})
