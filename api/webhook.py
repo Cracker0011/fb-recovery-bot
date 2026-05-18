@@ -23,17 +23,19 @@ STATE_WAITING_OTP = "waiting_otp"
 
 SESSION_EXPIRE_SECONDS = 3600
 
+FB_URL = "https://b-graph.facebook.com/graphql"
+BLOKS_VERSION = "d1583f026cccd22345fea8de656bb1d8162dabcca3249d6a0610be47545ec31a"
+
 
 def redis_set(key, value):
     url = f"{UPSTASH_REDIS_URL}/set/{key}"
     headers = {"Authorization": f"Bearer {UPSTASH_REDIS_TOKEN}"}
     body = json.dumps(value)
-    r = requests.post(url, headers=headers, data=body)
+    requests.post(url, headers=headers, data=body)
     requests.post(
         f"{UPSTASH_REDIS_URL}/expire/{key}/{SESSION_EXPIRE_SECONDS}",
         headers=headers
     )
-    return r.status_code == 200
 
 
 def redis_get(key):
@@ -48,12 +50,6 @@ def redis_get(key):
             except Exception:
                 return data["result"]
     return None
-
-
-def redis_del(key):
-    url = f"{UPSTASH_REDIS_URL}/del/{key}"
-    headers = {"Authorization": f"Bearer {UPSTASH_REDIS_TOKEN}"}
-    requests.get(url, headers=headers)
 
 
 def get_user_data(chat_id):
@@ -103,21 +99,7 @@ def new_session(phone, uid):
     }
 
 
-FB_URL = "https://b-graph.facebook.com/graphql"
-BLOKS_VERSION = "d1583f026cccd22345fea8de656bb1d8162dabcca3249d6a0610be47545ec31a"
-NT_CONTEXT = {
-    "using_white_navbar": True,
-    "styles_id": "6100e7e89411ccf67ace027cedecd84f",
-    "pixel_ratio": 2,
-    "is_push_on": True,
-    "debug_tooling_metadata_token": None,
-    "is_flipper_enabled": False,
-    "theme_params": [{"value": [], "design_system_name": "FDS"}],
-    "bloks_version": "d1583f026cccd22345fea8de656bb1d8162dabcca3249d6a0610be47545ec31a"
-}
-
-
-def base_headers(s, friendly_name, app_scope=None):
+def make_headers(s, friendly_name, app_scope_override=None):
     return {
         'Host': 'b-graph.facebook.com',
         'X-Fb-Request-Analytics-Tags': '{"network_tags":{"product":"350685531728","request_category":"graphql","purpose":"fetch","retry_attempt":"0"},"application_tags":"graphservice"}',
@@ -138,7 +120,7 @@ def base_headers(s, friendly_name, app_scope=None):
         'Authorization': 'OAuth 350685531728|62f8ce9f74b12f84c123cc23437a4a32',
         'X-Zero-State': 'unknown',
         'X-Meta-Zca': 'empty_token',
-        'App-Scope-Id-Header': app_scope if app_scope else s['meta'],
+        'App-Scope-Id-Header': app_scope_override if app_scope_override else s['meta'],
         'X-Fb-Connection-Type': 'WIFI',
         'X-Meta-Usdid': f'{s["meta"]}.{s["timestamp"]}.MEUCIBc96mMH-irWbHDt32-0F2F_6fLWkd-3NyUQKof4t7dyAiEAsP7usXNBcNySth5bRsnDECJdI4TMVwXgiXZ436qgExk',
         'X-Fb-Http-Engine': 'Tigon/Liger',
@@ -148,9 +130,21 @@ def base_headers(s, friendly_name, app_scope=None):
     }
 
 
-def do_searchprefil(s):
-    r = requests.Session()
-    headers = base_headers(s, 'com.bloks.www.caa.ar.search.prefill.async', app_scope=str(uuid.uuid4()))
+def nt_context():
+    return {
+        "using_white_navbar": True,
+        "styles_id": "6100e7e89411ccf67ace027cedecd84f",
+        "pixel_ratio": 2,
+        "is_push_on": True,
+        "debug_tooling_metadata_token": None,
+        "is_flipper_enabled": False,
+        "theme_params": [{"value": [], "design_system_name": "FDS"}],
+        "bloks_version": BLOKS_VERSION
+    }
+
+
+def do_searchprefil(session, s):
+    headers = make_headers(s, 'com.bloks.www.caa.ar.search.prefill.async', app_scope_override=str(uuid.uuid4()))
     params = {
         "method": "post", "pretty": "false", "format": "json",
         "server_timestamps": "true", "locale": "id_ID", "purpose": "fetch",
@@ -216,20 +210,19 @@ def do_searchprefil(s):
                 "app_id": "com.bloks.www.caa.ar.search.prefill.async"
             },
             "scale": "2",
-            "nt_context": NT_CONTEXT
+            "nt_context": nt_context()
         }),
         "fb_api_analytics_tags": json.dumps(["GraphServices"]),
         "client_trace_id": s['meta'],
     }
-    resp = r.post(FB_URL, headers=headers, params=params, timeout=15)
+    resp = session.post(FB_URL, headers=headers, params=params, timeout=15)
     match = re.search(r'Ad[A-Za-z0-9_\-]{30,}\|arm', resp.text)
     if match:
         s['contextdata'] = match.group(0)
 
 
-def do_searchasync(s):
-    r = requests.Session()
-    headers = base_headers(s, 'com.bloks.www.caa.ar.search.async')
+def do_searchasync(session, s):
+    headers = make_headers(s, 'com.bloks.www.caa.ar.search.async')
     params = {
         "method": "post", "pretty": "false", "format": "json",
         "server_timestamps": "true", "locale": "id_ID", "purpose": "fetch",
@@ -321,20 +314,19 @@ def do_searchasync(s):
                 "app_id": "com.bloks.www.caa.ar.search.async"
             },
             "scale": "2",
-            "nt_context": NT_CONTEXT
+            "nt_context": nt_context()
         }),
         "fb_api_analytics_tags": json.dumps(["GraphServices"]),
         "client_trace_id": s['meta']
     }
-    resp = r.post(FB_URL, headers=headers, params=params, timeout=15)
+    resp = session.post(FB_URL, headers=headers, params=params, timeout=15)
     match = re.search(r'Ad[A-Za-z0-9_\-]{30,}\|arm', resp.text)
     if match:
         s['contextdata'] = match.group(0)
 
 
-def do_authselection(s):
-    r = requests.Session()
-    headers = base_headers(s, 'com.bloks.www.caa.ar.auth_option_selection.async')
+def do_authselection(session, s):
+    headers = make_headers(s, 'com.bloks.www.caa.ar.auth_option_selection.async')
     headers['X-Fb-Conn-Uuid-Client'] = '9HJxKBEZBnNzTtUXmFGhwQ=='
     params = {
         "method": "post", "pretty": "false", "format": "json",
@@ -399,12 +391,12 @@ def do_authselection(s):
                 "app_id": "com.bloks.www.caa.ar.auth_option_selection.async"
             },
             "scale": "2",
-            "nt_context": NT_CONTEXT
+            "nt_context": nt_context()
         }),
         "fb_api_analytics_tags": json.dumps(["GraphServices"]),
         "client_trace_id": s['meta']
     }
-    resp = r.post(FB_URL, headers=headers, params=params, timeout=15)
+    resp = session.post(FB_URL, headers=headers, params=params, timeout=15)
     resp_text = resp.text
     clean_text = re.sub(r'\\+/', '/', resp_text)
 
@@ -420,13 +412,17 @@ def do_authselection(s):
     match_img = re.search(r'https://www\.facebook\.com/captcha/tfbimage/[^\s"\'\\]+', clean_text)
     if match_img:
         captcha_url = match_img.group(0).rstrip('\\')
+    else:
+        match_audio = re.search(r'https://www\.facebook\.com/captcha/tfbaudio/[^\s"\'\\]+', clean_text)
+        if match_audio:
+            captcha_url = match_audio.group(0).rstrip('\\')
 
-    return captcha_url
+    return captcha_url, resp_text
 
 
 def do_smscaptcha(s):
-    r = requests.Session()
-    headers = base_headers(s, 'com.bloks.www.caa.ar.sms_captcha.async', app_scope='34c6b00f-d6c0-4095-8b94-3ce4316a228d')
+    session = requests.Session()
+    headers = make_headers(s, 'com.bloks.www.caa.ar.sms_captcha.async', app_scope_override='34c6b00f-d6c0-4095-8b94-3ce4316a228d')
     headers['X-Fb-Conn-Uuid-Client'] = '9HJxKBEZBnNzTtUXmFGhwQ=='
     params = {
         "method": "post", "pretty": "false", "format": "json",
@@ -479,25 +475,22 @@ def do_smscaptcha(s):
                 "app_id": "com.bloks.www.caa.ar.sms_captcha.async"
             },
             "scale": "2",
-            "nt_context": NT_CONTEXT
+            "nt_context": nt_context()
         })
     }
-    resp = r.post(FB_URL, headers=headers, params=params, timeout=15)
+    resp = session.post(FB_URL, headers=headers, params=params, timeout=15)
     resp_text = resp.text
     clean_text = re.sub(r'\\+/', '/', resp_text)
 
     match_ctx = re.search(r'Ad[A-Za-z0-9_\-]{30,}\|arm', clean_text)
     if match_ctx:
         s['contextdata'] = match_ctx.group(0)
-        print(f"[✓] contextdata diperbarui dari smscaptcha")
-    else:
-        print(f"[!] contextdata tidak ditemukan di response smscaptcha")
 
     return resp_text
 
 
 def do_sumbitcode(s):
-    r = requests.Session()
+    session = requests.Session()
     headers = {
         'Host': 'b-graph.facebook.com',
         'X-Fb-Request-Analytics-Tags': '{"network_tags":{"product":"350685531728","request_category":"graphql","purpose":"fetch","retry_attempt":"0"},"application_tags":"graphservice"}',
@@ -605,7 +598,7 @@ def do_sumbitcode(s):
             }
         })
     }
-    resp = r.post(FB_URL, headers=headers, params=params, timeout=15)
+    resp = session.post(FB_URL, headers=headers, params=params, timeout=15)
     return resp.text
 
 
@@ -640,30 +633,47 @@ def handle_message(message):
             s = new_session(phone, uid)
             bot.send_message(chat_id, "⏳ Memproses... mohon tunggu sebentar.")
             try:
-                do_searchprefil(s)
-                do_searchasync(s)
-                captcha_url = do_authselection(s)
+                shared_session = requests.Session()
+                do_searchprefil(shared_session, s)
+                do_searchasync(shared_session, s)
+                captcha_url, raw_resp = do_authselection(shared_session, s)
 
                 if captcha_url:
+                    is_audio = 'tfbaudio' in captcha_url
                     try:
                         img_resp = requests.get(captcha_url, timeout=15)
                         if img_resp.status_code == 200:
-                            bot.send_photo(
-                                chat_id,
-                                img_resp.content,
-                                caption="🔐 *Captcha Facebook*\n\nKetik kode yang terlihat di gambar ini:",
-                                parse_mode="Markdown"
-                            )
+                            if is_audio:
+                                bot.send_audio(
+                                    chat_id,
+                                    img_resp.content,
+                                    caption="🔊 *Audio Captcha Facebook*\n\nDengarkan dan ketik kode yang kamu dengar:",
+                                    parse_mode="Markdown"
+                                )
+                            else:
+                                bot.send_photo(
+                                    chat_id,
+                                    img_resp.content,
+                                    caption="🔐 *Captcha Facebook*\n\nKetik kode yang terlihat di gambar ini:",
+                                    parse_mode="Markdown"
+                                )
                             save_user_data(chat_id, {"state": STATE_WAITING_CAPTCHA, "session": s})
                         else:
-                            bot.send_message(chat_id, f"⚠️ Gagal download gambar captcha.\nBuka URL ini:\n{captcha_url}")
-                            bot.send_message(chat_id, "✏️ Lalu ketik kode captcha di sini:")
+                            bot.send_message(chat_id, f"⚠️ Gagal download captcha (status {img_resp.status_code}).\nURL: `{captcha_url}`\n\nKetik kode captcha secara manual:", parse_mode="Markdown")
                             save_user_data(chat_id, {"state": STATE_WAITING_CAPTCHA, "session": s})
                     except Exception as e:
-                        bot.send_message(chat_id, f"⚠️ Error ambil gambar: {e}")
-                        save_user_data(chat_id, {"state": STATE_IDLE, "session": None})
+                        bot.send_message(chat_id, f"⚠️ Error ambil captcha: {e}\nURL: `{captcha_url}`\n\nKetik kode captcha:", parse_mode="Markdown")
+                        save_user_data(chat_id, {"state": STATE_WAITING_CAPTCHA, "session": s})
                 else:
-                    bot.send_message(chat_id, "⚠️ URL captcha tidak ditemukan. Coba lagi.\n\nKirim: `+nomorhp|uid`", parse_mode="Markdown")
+                    bot.send_message(
+                        chat_id,
+                        "⚠️ URL captcha tidak ditemukan di response.\n\n"
+                        "Kemungkinan:\n"
+                        "• Nomor tidak terdaftar di Facebook\n"
+                        "• Facebook tidak meminta captcha untuk nomor ini\n\n"
+                        "Coba kirim ulang: `+nomorhp|uid`",
+                        parse_mode="Markdown"
+                    )
                     save_user_data(chat_id, {"state": STATE_IDLE, "session": None})
 
             except Exception as e:
@@ -705,7 +715,7 @@ def handle_message(message):
             result = do_sumbitcode(s)
             bot.send_message(
                 chat_id,
-                f"✅ *Selesai!* Response dari server:\n\n```{result[:3000]}```",
+                f"✅ *Selesai!* Response:\n\n```{result[:3000]}```",
                 parse_mode="Markdown"
             )
         except Exception as e:
@@ -714,7 +724,7 @@ def handle_message(message):
         save_user_data(chat_id, {"state": STATE_IDLE, "session": None})
         bot.send_message(
             chat_id,
-            "🔄 Kamu bisa langsung kirim nomor dan uid lagi tanpa /start:\n`+nomorhp|uid`",
+            "🔄 Bisa langsung kirim nomor lain tanpa /start:\n`+nomorhp|uid`",
             parse_mode="Markdown"
         )
     else:
@@ -741,7 +751,10 @@ def index():
 def set_webhook():
     webhook_url = request.args.get("url")
     if not webhook_url:
-        return Response("Tambahkan https://fb-recovery-bot.vercel.app/set_webhook?url=https://fb-recovery-bot.vercel.app/webhook", status=400)
+        return Response(
+            "Tambahkan https://fb-recovery-bot.vercel.app/set_webhook?url=https://fb-recovery-bot.vercel.app/webhook",
+            status=400
+        )
     result = bot.set_webhook(url=webhook_url)
     if result:
         return Response(f"Webhook berhasil diset ke: {webhook_url}", status=200)
