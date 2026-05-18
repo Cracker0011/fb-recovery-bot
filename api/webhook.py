@@ -741,7 +741,7 @@ def index():
 def set_webhook():
     webhook_url = request.args.get("url")
     if not webhook_url:
-        return Response("Tambahkan ?url=https://domain-vercel-kamu.vercel.app/webhook", status=400)
+        return Response("Tambahkan https://fb-recovery-bot.vercel.app/set_webhook?url=https://fb-recovery-bot.vercel.app/webhook", status=400)
     result = bot.set_webhook(url=webhook_url)
     if result:
         return Response(f"Webhook berhasil diset ke: {webhook_url}", status=200)
